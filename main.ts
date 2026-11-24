@@ -11,7 +11,7 @@
 // itself, and the deadpan verdict at the end is that the review
 // found no flaws.
 
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 const LINE =
@@ -19,17 +19,35 @@ const LINE =
 
 // The sealed scorer's gate: /output/entry.txt must be UTF-8 text of
 // 1 to 200 characters, not only white space. The entry is one line,
-// so check those limits before writing.
-if (LINE.length < 1 || LINE.length > 200) {
-  throw new Error(`line must be 1-200 characters, got ${LINE.length}`);
-}
-if (LINE.trim().length === 0) {
-  throw new Error("line must not be only whitespace");
-}
-if (LINE.includes("\n") || LINE.includes("\r")) {
-  throw new Error("line must be a single line");
+// so validate the line against the same limits before writing — an
+// entry outside the gate is never judged.
+function validateEntry(text: string): void {
+  if (text.length < 1 || text.length > 200) {
+    throw new Error(`line must be 1-200 characters, got ${text.length}`);
+  }
+  if (text.trim().length === 0) {
+    throw new Error("line must not be only whitespace");
+  }
+  if (text.includes("\n") || text.includes("\r")) {
+    throw new Error("line must be a single line");
+  }
 }
 
-const outDir = process.env.OUTPUT_DIR ?? "/output";
-mkdirSync(outDir, { recursive: true });
-writeFileSync(join(outDir, "entry.txt"), LINE, "utf8");
+validateEntry(LINE);
+
+// Write the entry, then read it back and re-validate what actually
+// landed on disk: the scorer reads the file, not this source, so the
+// file itself is what must stay inside the gate.
+function main(): void {
+  const outDir = process.env.OUTPUT_DIR ?? "/output";
+  mkdirSync(outDir, { recursive: true });
+  const target = join(outDir, "entry.txt");
+  writeFileSync(target, LINE, "utf8");
+  const written = readFileSync(target, "utf8");
+  validateEntry(written);
+  if (written !== LINE) {
+    throw new Error("entry.txt on disk differs from the authored line");
+  }
+}
+
+main();
